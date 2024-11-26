@@ -22,6 +22,8 @@ func initDatabase() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// Updated table to ensure numeric indices are stored
 	createTableSQL := `
     CREATE TABLE IF NOT EXISTS submissions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,9 +36,10 @@ func initDatabase() {
 	}
 }
 
+// Updated struct to use a map of string to int for numeric indices
 type QuestionnaireSubmission struct {
-	Answers   map[string]string `json:"answers"`
-	Timestamp time.Time         `json:"timestamp"`
+	Answers   map[string]int `json:"answers"`
+	Timestamp time.Time      `json:"timestamp"`
 }
 
 func handleSubmitQuestionnaire(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +47,7 @@ func handleSubmitQuestionnaire(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
 	var submission QuestionnaireSubmission
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&submission); err != nil {
@@ -51,23 +55,32 @@ func handleSubmitQuestionnaire(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
+
 	if len(submission.Answers) == 0 {
 		http.Error(w, "No answers provided", http.StatusBadRequest)
 		return
 	}
+
 	submission.Timestamp = time.Now()
-	answersJSON, _ := json.Marshal(submission.Answers)
+	answersJSON, err := json.Marshal(submission.Answers)
+	if err != nil {
+		http.Error(w, "Error processing answers", http.StatusInternalServerError)
+		return
+	}
+
 	stmt, err := db.Prepare("INSERT INTO submissions(answers, timestamp) VALUES(?, ?)")
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 	defer stmt.Close()
+
 	_, err = stmt.Exec(string(answersJSON), submission.Timestamp)
 	if err != nil {
 		http.Error(w, "Submission failed", http.StatusInternalServerError)
 		return
 	}
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "success",
