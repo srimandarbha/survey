@@ -1,12 +1,20 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 const QuestionnairePanels = () => {
   const [activePanel, setActivePanel] = useState(0);
   const [answers, setAnswers] = useState({});
+  const [team, setTeam] = useState('');
+  const [score, setScore] = useState('');
+  const [previousScore, setPreviousScore] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [searchParams] = useSearchParams();
+  const submissionId = searchParams.get("id");
 
   const panels = [
+    // Your existing panels configuration here
     {
       title: 'Availability & SLOs',
       questions: [
@@ -59,36 +67,64 @@ const QuestionnairePanels = () => {
         }
       ]
     }
+    // Other panels...
   ];
 
+  // Fetch data and prefill answers if `id` is present in the URL
+  useEffect(() => {
+    if (submissionId) {
+      setLoading(true);
+      fetch(`/api/fetch-submission?id=${submissionId}`)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Failed to fetch submission data");
+          }
+          return response.json();
+        })
+        .then((data) => {
+          setAnswers(data.answers || {});
+          const fetchedTeam = data.team || data.teamName || '';
+          console.log('Fetched submission data:', data);
+          setTeam(fetchedTeam);
+          setScore(data.score || '');
+          setPreviousScore(data.previous_score || 0);
+        })
+        .catch((error) => {
+          console.error("Error fetching submission:", error);
+          setSubmitError("Failed to load submission data. Please try again.");
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }
+  }, [submissionId]);
+
   const handleAnswerChange = (panelIndex, questionIndex, optionIndex) => {
-    setAnswers(prev => ({
+    setAnswers((prev) => ({
       ...prev,
-      [`panel_${panelIndex}_question_${questionIndex}`]: optionIndex
+      [`panel_${panelIndex}_question_${questionIndex}`]: optionIndex,
     }));
   };
 
-  // Check if all questions in the current panel are answered
   const isPanelComplete = (panelIndex) => {
     const panelQuestions = panels[panelIndex].questions;
     return panelQuestions.every(
-      (_, questionIndex) => 
+      (_, questionIndex) =>
         answers[`panel_${panelIndex}_question_${questionIndex}`] !== undefined
     );
   };
 
-  // Check the number of completed questions for each panel
   const getPanelCompletionStatus = (panelIndex) => {
     const panelQuestions = panels[panelIndex].questions;
     const completedQuestions = panelQuestions.filter(
-      (_, questionIndex) => 
+      (_, questionIndex) =>
         answers[`panel_${panelIndex}_question_${questionIndex}`] !== undefined
     ).length;
 
     return {
       completedQuestions,
       totalQuestions: panelQuestions.length,
-      isComplete: completedQuestions === panelQuestions.length
+      isComplete: completedQuestions === panelQuestions.length,
     };
   };
 
@@ -104,15 +140,17 @@ const QuestionnairePanels = () => {
         },
         body: JSON.stringify({
           answers: answers,
-          timestamp: new Date().toISOString()
-        })
+          timestamp: new Date().toISOString(),
+          team: team,
+          score: score,
+          previous_score: previousScore
+        }),
       });
 
       if (!response.ok) {
         throw new Error('Submission failed');
       }
 
-      const result = await response.json();
       alert('Assessment submitted successfully!');
     } catch (error) {
       console.error('Submission error:', error);
@@ -123,37 +161,74 @@ const QuestionnairePanels = () => {
   };
 
   const questionsCompletion = useMemo(() => {
-    const totalQuestions = panels.reduce((total, panel) => total + panel.questions.length, 0);
+    const totalQuestions = panels.reduce(
+      (total, panel) => total + panel.questions.length,
+      0
+    );
     const answeredQuestions = Object.keys(answers).length;
-    return { 
-      totalQuestions, 
+    return {
+      totalQuestions,
       answeredQuestions,
-      percentComplete: Math.round((answeredQuestions / totalQuestions) * 100)
+      percentComplete: Math.round(
+        (answeredQuestions / totalQuestions) * 100
+      ),
     };
   }, [answers, panels]);
 
-  const isQuestionsComplete = questionsCompletion.answeredQuestions === questionsCompletion.totalQuestions;
+  const isQuestionsComplete =
+    questionsCompletion.answeredQuestions === questionsCompletion.totalQuestions;
+
+  if (loading) {
+    return <div>Loading submission data...</div>;
+  }
 
   return (
     <div className="flex flex-col min-h-screen p-4">
       <h1 className="text-2xl font-bold mb-6 text-center text-gray-800">
         SRE Maturity Assessment
       </h1>
-      
+      {!submissionId && (
+        <div className="mb-4">
+          <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="team">
+            Team Name
+          </label>
+          <input
+            type="text"
+            id="team"
+            value={team}
+            onChange={(e) => setTeam(e.target.value)}
+            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            placeholder="Enter your team name"
+          />
+        </div>
+      )}
+      {submissionId && (
+        <div className="mb-4">
+          <label className="block text-gray-700 text-sm font-bold mb-2">
+            Team Name
+          </label>
+          <div className="py-2 px-3 bg-gray-100 rounded">
+            {team || 'No team name found'}
+          </div>
+        </div>
+      )}
       <div className="mb-4 bg-gray-100 p-3 rounded">
         <div className="flex items-center">
           <div className="w-full bg-gray-200 rounded-full h-2.5 mr-4">
-            <div 
-              className="bg-blue-600 h-2.5 rounded-full" 
-              style={{width: `${questionsCompletion.percentComplete}%`}}
+            <div
+              className="bg-blue-600 h-2.5 rounded-full"
+              style={{ width: `${questionsCompletion.percentComplete}%` }}
             ></div>
           </div>
           <span className="text-sm font-medium text-gray-500">
-            {questionsCompletion.percentComplete}% ({questionsCompletion.answeredQuestions} / {questionsCompletion.totalQuestions} Questions)
+            {questionsCompletion.percentComplete}% (
+            {questionsCompletion.answeredQuestions} /{' '}
+            {questionsCompletion.totalQuestions} Questions)
           </span>
         </div>
       </div>
 
+      {/* Panel Navigation */}
       <div className="flex mb-4 overflow-x-auto pb-2">
         {panels.map((panel, index) => {
           const panelStatus = getPanelCompletionStatus(index);
@@ -161,45 +236,57 @@ const QuestionnairePanels = () => {
             <button
               key={index}
               onClick={() => setActivePanel(index)}
-              className={`
-                px-4 py-2 mr-2 rounded whitespace-nowrap relative
-                ${activePanel === index 
-                  ? 'bg-blue-500 text-white' 
-                  : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}
-                ${panelStatus.isComplete ? 'border-2 border-green-500' : ''}
-              `}
+              className={`px-4 py-2 mr-2 rounded whitespace-nowrap relative ${
+                activePanel === index
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+              } ${
+                panelStatus.isComplete ? 'border-2 border-green-500' : ''
+              }`}
             >
               {panel.title}
-              {panelStatus.completedQuestions > 0 && !panelStatus.isComplete && (
-                <span 
-                  className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 
-                    bg-blue-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"
-                >
-                  {panelStatus.completedQuestions}
-                </span>
-              )}
+              {panelStatus.completedQuestions > 0 &&
+                !panelStatus.isComplete && (
+                  <span
+                    className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 bg-blue-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"
+                  >
+                    {panelStatus.completedQuestions}
+                  </span>
+                )}
             </button>
           );
         })}
       </div>
 
+      {/* Active Panel */}
       <div className="flex-grow bg-white p-6 rounded shadow">
         <h2 className="text-xl font-bold mb-4 text-gray-700">
           {panels[activePanel].title}
         </h2>
         <div className="space-y-6">
           {panels[activePanel].questions.map((question, qIndex) => (
-            <div key={qIndex} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <div
+              key={qIndex}
+              className="bg-gray-50 p-4 rounded-lg border border-gray-200"
+            >
               <p className="text-lg mb-3 text-gray-700">{question.text}</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {question.options.map((option, optIndex) => (
-                  <label key={optIndex} className="inline-flex items-center p-2 hover:bg-gray-100 rounded">
+                  <label
+                    key={optIndex}
+                    className="inline-flex items-center p-2 hover:bg-gray-100 rounded"
+                  >
                     <input
                       type="radio"
                       name={`panel_${activePanel}_question_${qIndex}`}
                       value={optIndex}
-                      checked={answers[`panel_${activePanel}_question_${qIndex}`] === optIndex}
-                      onChange={() => handleAnswerChange(activePanel, qIndex, optIndex)}
+                      checked={
+                        answers[`panel_${activePanel}_question_${qIndex}`] ===
+                        optIndex
+                      }
+                      onChange={() =>
+                        handleAnswerChange(activePanel, qIndex, optIndex)
+                      }
                       className="form-radio text-blue-600"
                     />
                     <span className="ml-2 text-gray-700">{option}</span>
@@ -217,20 +304,22 @@ const QuestionnairePanels = () => {
         </div>
       )}
 
+      {/* Submit Button */}
       <div className="mt-4 flex justify-between items-center">
         <div className="text-sm text-gray-600">
-          {getPanelCompletionStatus(activePanel).completedQuestions} / {panels[activePanel].questions.length} Questions Answered
+          {getPanelCompletionStatus(activePanel).completedQuestions} /{' '}
+          {panels[activePanel].questions.length} Questions Answered
         </div>
-        <button 
+        <button
           onClick={handleSubmit}
           disabled={!isQuestionsComplete || isSubmitting}
-          className={`px-6 py-2 rounded 
-            ${isQuestionsComplete 
-              ? 'bg-green-500 text-white hover:bg-green-600' 
-              : 'bg-gray-300 text-gray-500 cursor-not-allowed'}
-            disabled:opacity-50`}
+          className={`px-6 py-2 rounded ${
+            isQuestionsComplete
+              ? 'bg-green-500 text-white hover:bg-green-600'
+              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+          }`}
         >
-          {isSubmitting ? 'Submitting...' : 'Submit Assessment'}
+          {isSubmitting ? 'Submitting...' : 'Submit'}
         </button>
       </div>
     </div>
