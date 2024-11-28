@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"encoding/json"
 	"io"
 	"log"
@@ -12,10 +13,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	//"path/filepath"
-	//"strings"
-	"embed"
 	"syscall"
 	"time"
 
@@ -269,6 +266,7 @@ type Submission struct {
 	Team          string          `json:"team"`
 	Score         string          `json:"score"`
 	PreviousScore int             `json:"previous_score"`
+	Version       int             `json:"version"`
 }
 
 func fetchSubmission(w http.ResponseWriter, r *http.Request) {
