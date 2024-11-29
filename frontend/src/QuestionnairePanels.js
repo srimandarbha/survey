@@ -1,12 +1,54 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
+
+const calculatePanelScore = (answers, panelIndex, panels) => {
+  const panelQuestions = panels[panelIndex].questions;
+  let totalScore = 0;
+  let validQuestions = 0;
+
+  panelQuestions.forEach((_, questionIndex) => {
+    const answerKey = `panel_${panelIndex}_question_${questionIndex}`;
+    const answer = answers[answerKey];
+
+    // Skip calculation if answer is 0 (exempted)
+    if (answer !== 0 && answer !== undefined) {
+      totalScore += answer;
+      validQuestions++;
+    }
+  });
+
+  // Calculate percentage score for the panel
+  const panelScore = validQuestions > 0 
+    ? Math.round((totalScore / (validQuestions * 5)) * 100)
+    : 0;
+
+  return panelScore;
+};
+
+const calculateTotalScore = (answers, panels) => {
+  const panelScores = panels.map((_, index) => 
+    calculatePanelScore(answers, index, panels)
+  );
+
+  // Calculate weighted average 
+  const totalScore = Math.round(
+    panelScores.reduce((sum, score) => sum + score, 0) / panels.length
+  );
+
+  return {
+    panelScores,
+    totalScore
+  };
+};
+
 const QuestionnairePanels = () => {
   const [activePanel, setActivePanel] = useState(0);
   const [answers, setAnswers] = useState({});
   const [team, setTeam] = useState('');
   const [score, setScore] = useState('');
   const [previousScore, setPreviousScore] = useState(0);
+  const [version, setVersion] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -70,6 +112,10 @@ const QuestionnairePanels = () => {
     // Other panels...
   ];
 
+  const scoringDetails = useMemo(() => {
+    return calculateTotalScore(answers, panels);
+  }, [answers, panels]);
+
   // Fetch data and prefill answers if `id` is present in the URL
   useEffect(() => {
     if (submissionId) {
@@ -88,6 +134,7 @@ const QuestionnairePanels = () => {
           setTeam(fetchedTeam);
           setScore(data.score || '');
           setPreviousScore(data.previous_score || 0);
+          setVersion(data.version || 1);
         })
         .catch((error) => {
           console.error("Error fetching submission:", error);
@@ -131,26 +178,48 @@ const QuestionnairePanels = () => {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setSubmitError(null);
-
+  
     try {
-      const response = await fetch('/api/submit-questionnaire', {
+      const newVersion = version + 1;
+      const submissionPayload = {
+        answers: answers,
+        timestamp: new Date().toISOString(),
+        team: team || 'Unknown',
+        score: scoringDetails.totalScore,
+        previous_score: previousScore || 0,
+        version: newVersion,
+      };
+  
+      // Determine which API endpoint to use
+      const apiEndpoint = submissionId 
+        ? '/api/update-submission' 
+        : '/api/submit-questionnaire';
+  
+      // If updating an existing submission, include the submission ID
+      if (submissionId) {
+        submissionPayload.id = submissionId;
+      }
+  
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          answers: answers,
-          timestamp: new Date().toISOString(),
-          team: team,
-          score: score,
-          previous_score: previousScore
-        }),
+        body: JSON.stringify(submissionPayload),
       });
-
+  
+      const responseBody = await response.text();
+      console.log('Response Status:', response.status);
+      console.log('Response Body:', responseBody);
+  
       if (!response.ok) {
         throw new Error('Submission failed');
       }
-
+  
+      setVersion(newVersion);
+      setPreviousScore(score); 
+      setScore(scoringDetails.totalScore.toString());
+      
       alert('Assessment submitted successfully!');
     } catch (error) {
       console.error('Submission error:', error);
@@ -159,7 +228,7 @@ const QuestionnairePanels = () => {
       setIsSubmitting(false);
     }
   };
-
+  
   const questionsCompletion = useMemo(() => {
     const totalQuestions = panels.reduce(
       (total, panel) => total + panel.questions.length,

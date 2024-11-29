@@ -214,7 +214,11 @@ const HomePage = () => {
                   <div className="text-sm text-gray-500 mb-2">
                     <div>Submitted: {new Date(submission.timestamp).toLocaleString()}</div>
                     <div>Score: {submission.score}</div>
-                    <div>Previous Score: {submission.previous_score}</div>
+                    <div>  
+                      <span>Version: {submission.version}</span>
+                      {submission.previousScore && (
+                      <span>Previous Score: {submission.previousScore}</span>)}
+                    </div>
                   </div>
                   <div className="flex space-x-2">
                     <button

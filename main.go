@@ -41,7 +41,8 @@ func initDatabase() {
         timestamp DATETIME,
 		team TEXT UNIQUE,
 		score TEXT,
-		previous_score INTEGER
+		previous_score INTEGER,
+		version INTEGER DEFAULT 1
     )`
 	_, err = db.Exec(createTableSQL)
 	if err != nil {
@@ -102,7 +103,7 @@ func handleFetchSubmissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query("SELECT id, answers, timestamp, team, score, previous_score FROM submissions")
+	rows, err := db.Query("SELECT id, answers, timestamp, team, score, previous_score, version FROM submissions")
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
@@ -115,10 +116,11 @@ func handleFetchSubmissions(w http.ResponseWriter, r *http.Request) {
 		var answersJSON string
 		var timestamp time.Time
 		var team string
-		var score string
+		var score int
 		var previousScore int
+		var version int
 
-		if err := rows.Scan(&id, &answersJSON, &timestamp, &team, &score, &previousScore); err != nil {
+		if err := rows.Scan(&id, &answersJSON, &timestamp, &team, &score, &previousScore, &version); err != nil {
 			http.Error(w, "Error reading data", http.StatusInternalServerError)
 			return
 		}
@@ -136,6 +138,7 @@ func handleFetchSubmissions(w http.ResponseWriter, r *http.Request) {
 			Team:          team,
 			Score:         score,
 			PreviousScore: previousScore,
+			Version:       version,
 		})
 	}
 
@@ -155,8 +158,9 @@ func handleUpdateSubmission(w http.ResponseWriter, r *http.Request) {
 		Answers       map[string]int `json:"answers"`
 		Timestamp     time.Time      `json:"timestamp"`
 		Team          string         `json:"team"`
-		Score         string         `json:"score"`
+		Score         int            `json:"score"`
 		PreviousScore int            `json:"previous_score"`
+		Version       int            `json:"version"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -172,9 +176,11 @@ func handleUpdateSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	submission.Version++
+
 	stmt, err := db.Prepare(`
 			UPDATE submissions
-			SET answers = ?, team = ?, score = ?, previous_score = ? 
+			SET answers = ?, timestamp = ?, team = ?, score = ?, previous_score = ?, version = ?
 			WHERE id = ?
 			`)
 	if err != nil {
@@ -183,7 +189,7 @@ func handleUpdateSubmission(w http.ResponseWriter, r *http.Request) {
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(string(answersJSON), submission.Team, submission.Score, submission.PreviousScore, submission.ID)
+	_, err = stmt.Exec(string(answersJSON), submission.Timestamp, submission.Team, submission.Score, submission.PreviousScore, submission.Version, submission.ID)
 	if err != nil {
 		http.Error(w, "Update failed", http.StatusInternalServerError)
 		return
@@ -201,11 +207,23 @@ type QuestionnaireSubmission struct {
 	Answers       map[string]int `json:"answers"`
 	Timestamp     time.Time      `json:"timestamp"`
 	Team          string         `json:"team"`
-	Score         string         `json:"score"`
+	Score         int            `json:"score"`
 	PreviousScore int            `json:"previous_score"`
+	Version       int            `json:"version"`
 }
 
 func handleSubmitQuestionnaire(w http.ResponseWriter, r *http.Request) {
+	// Enable CORS for all methods
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	// Handle preflight requests
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -237,17 +255,22 @@ func handleSubmitQuestionnaire(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if submission.Version < 1 {
+		submission.Version = 1
+	}
+
 	stmt, err := db.Prepare(`
-		INSERT INTO submissions (answers, timestamp, team, score, previous_score) 
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO submissions (answers, timestamp, team, score, previous_score, version) 
+		VALUES (?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 	defer stmt.Close()
-
-	_, err = stmt.Exec(string(answersJSON), submission.Timestamp, submission.Team, submission.Score, submission.PreviousScore)
+	log.Printf("Received payload: %+v", submission)
+	log.Printf("Validation errors: %v", err)
+	_, err = stmt.Exec(string(answersJSON), submission.Timestamp, submission.Team, submission.Score, submission.PreviousScore, submission.Version)
 	if err != nil {
 		http.Error(w, "Submission failed", http.StatusInternalServerError)
 		return
@@ -262,9 +285,9 @@ func handleSubmitQuestionnaire(w http.ResponseWriter, r *http.Request) {
 type Submission struct {
 	ID            int             `json:"id"`
 	Answers       json.RawMessage `json:"answers"`
-	Timestamp     string          `json:"timestamp"`
+	Timestamp     time.Time       `json:"timestamp"`
 	Team          string          `json:"team"`
-	Score         string          `json:"score"`
+	Score         int             `json:"score"`
 	PreviousScore int             `json:"previous_score"`
 	Version       int             `json:"version"`
 }
@@ -280,13 +303,14 @@ func fetchSubmission(w http.ResponseWriter, r *http.Request) {
 	// Prepare query to fetch submission
 	var submission Submission
 	var answersStr string // Change this to string instead of json.RawMessage
-	err = db.QueryRow("SELECT id, answers, timestamp, team, score, previous_score FROM submissions WHERE id = ?", id).Scan(
+	err = db.QueryRow("SELECT id, answers, timestamp, team, score, previous_score, version FROM submissions WHERE id = ?", id).Scan(
 		&submission.ID,
 		&answersStr, // Scan into a string first
 		&submission.Timestamp,
 		&submission.Team,
 		&submission.Score,
 		&submission.PreviousScore,
+		&submission.Version,
 	)
 
 	if err == sql.ErrNoRows {
