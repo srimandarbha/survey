@@ -197,7 +197,7 @@ const QuestionnairePanels = () => {
   
       // If updating an existing submission, include the submission ID
       if (submissionId) {
-        submissionPayload.id = submissionId;
+        submissionPayload.id = parseInt(submissionId, 10);
       }
   
       const response = await fetch(apiEndpoint, {
@@ -388,7 +388,11 @@ const QuestionnairePanels = () => {
               : 'bg-gray-300 text-gray-500 cursor-not-allowed'
           }`}
         >
-          {isSubmitting ? 'Submitting...' : 'Submit'}
+            {isSubmitting
+              ? 'Processing...'
+              : submissionId
+              ? 'Update'
+              : 'Submit'}
         </button>
       </div>
     </div>
