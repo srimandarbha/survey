@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
-
+import { useSearchParams, useNavigate } from 'react-router-dom';
 
 const calculatePanelScore = (answers, panelIndex, panels) => {
   const panelQuestions = panels[panelIndex].questions;
@@ -53,10 +52,10 @@ const QuestionnairePanels = () => {
   const [submitError, setSubmitError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const submissionId = searchParams.get("id");
 
   const panels = [
-    // Your existing panels configuration here
     {
       title: 'Availability & SLOs',
       questions: [
@@ -91,7 +90,6 @@ const QuestionnairePanels = () => {
         }
       ]
     },
-    // ... (other panels follow the same pattern)
     {
       title: 'Security & Compliance',
       questions: [
@@ -109,14 +107,12 @@ const QuestionnairePanels = () => {
         }
       ]
     }
-    // Other panels...
   ];
 
   const scoringDetails = useMemo(() => {
     return calculateTotalScore(answers, panels);
   }, [answers, panels]);
 
-  // Fetch data and prefill answers if `id` is present in the URL
   useEffect(() => {
     if (submissionId) {
       setLoading(true);
@@ -190,12 +186,10 @@ const QuestionnairePanels = () => {
         version: newVersion,
       };
   
-      // Determine which API endpoint to use
       const apiEndpoint = submissionId 
         ? '/api/update-submission' 
         : '/api/submit-questionnaire';
   
-      // If updating an existing submission, include the submission ID
       if (submissionId) {
         submissionPayload.id = parseInt(submissionId, 10);
       }
@@ -220,7 +214,16 @@ const QuestionnairePanels = () => {
       setPreviousScore(score); 
       setScore(scoringDetails.totalScore.toString());
       
-      alert('Assessment submitted successfully!');
+      const scoreChangeMessage = submissionId 
+        ? `Your team's SRE Maturity Score has been updated from ${previousScore} to ${scoringDetails.totalScore}.`
+        : `Your team's initial SRE Maturity Score is ${scoringDetails.totalScore}.`;
+
+      const detailedSuccessMessage = `Assessment submitted successfully!\n\n${scoreChangeMessage}\n\nClick OK to view your dashboard.`;
+      
+      alert(detailedSuccessMessage);
+      
+      navigate('/');
+
     } catch (error) {
       console.error('Submission error:', error);
       setSubmitError('Failed to submit assessment. Please try again.');
@@ -297,7 +300,6 @@ const QuestionnairePanels = () => {
         </div>
       </div>
 
-      {/* Panel Navigation */}
       <div className="flex mb-4 overflow-x-auto pb-2">
         {panels.map((panel, index) => {
           const panelStatus = getPanelCompletionStatus(index);
@@ -327,7 +329,6 @@ const QuestionnairePanels = () => {
         })}
       </div>
 
-      {/* Active Panel */}
       <div className="flex-grow bg-white p-6 rounded shadow">
         <h2 className="text-xl font-bold mb-4 text-gray-700">
           {panels[activePanel].title}
@@ -373,7 +374,6 @@ const QuestionnairePanels = () => {
         </div>
       )}
 
-      {/* Submit Button */}
       <div className="mt-4 flex justify-between items-center">
         <div className="text-sm text-gray-600">
           {getPanelCompletionStatus(activePanel).completedQuestions} /{' '}

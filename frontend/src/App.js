@@ -1,7 +1,7 @@
-import React from 'react';
-import { BrowserRouter as Router, Route, Routes, Link } from 'react-router-dom';
-import Homepage from './Homepage';
-import QuestionnairePanels from './QuestionnairePanels';
+import React from "react";
+import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
+import Homepage from "./Homepage";
+import QuestionnairePanels from "./QuestionnairePanels";
 
 const App = () => {
   return (
